@@ -1,0 +1,44 @@
+NetworkExpansion: 1
+TimeDomainReductionFolder: "TDR_Results"
+BD_Mode: "distributed"
+EnableJuMPStringNames: true
+BD_Stab_Method: "int_level_set"
+Trans_Loss_Segments: 1
+ModelingtoGenerateAlternativeSlack: 0.1
+Solver: "Gurobi"
+Benders: 1
+Reserves: 0
+MultiStage: 1
+BD_MaxCpuTime: 43200
+OverwriteResults: 0
+ModelingToGenerateAlternatives: 0
+MaxCapReq: 0
+MinCapReq: 0
+CO2Cap: 1
+WriteShadowPrices: 1
+IntegerInvestments: 0
+MultiStageSettingsDict:
+  Myopic: 0
+  ConvergenceTolerance: 0.001
+  WACC: 0.045
+  StageLengths:
+    - 10
+    - 10
+    - 10
+  CurStage: 3
+  NumStages: 3
+ModelingToGenerateAlternativeIterations: 3
+BD_MaxIter: 300
+ParameterScale: 1
+EnergyShareRequirement: 0
+PrintModel: 0
+TimeDomainReduction: 0
+BD_ConvTol: 0.001
+settings_path: "C:\\Users\\sylve\\GenX\\Benders GenX\\GenX-Benders\\GenX-Benders\\CONUS_Z3\\Settings"
+CapacityReserveMargin: 0
+MethodofMorris: 0
+StorageLosses: 0
+IncludeLossesInESR: 0
+NumScenarios: 1
+UCommit: 2
+BD_StabParam: 0.5

@@ -1,0 +1,4 @@
+transmission_path_name,Path_Max_Reinforcement_MW,Path_Max_Flow_Possible_MW
+SPPS_to_TRE,10000,100000
+SPPS_to_TRE_WEST,10000,100000
+TRE_to_TRE_WEST,165290,100000
