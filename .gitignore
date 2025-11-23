@@ -1,1 +1,6 @@
-GenX-Brazil/
+# macOS junk files
+.DS_Store
+
+# Large Brazil input data (keep local only)
+GenX-Brazil/Inputs/
+
