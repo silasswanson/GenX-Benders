@@ -1,6 +1,23 @@
-# macOS junk files
-.DS_Store
-
-# Large Brazil input data (keep local only)
+# === Case inputs (do not track full datasets) ===
+GenX-Brazil/*.csv
+!GenX-Brazil/Settings/*.yml    # keep settings in version control
 GenX-Brazil/Inputs/
+
+
+# === Run-generated outputs ===
+GenX-Brazil/Scenarios/
+GenX-Brazil/TDR_Results/
+GenX-Brazil/TDR_sweep_results/
+
+# === Misc backups / temp files ===
+GenX-Brazil/*backup*
+GenX-Brazil/*unused*
+
+# === Julia artifacts ===
+*.ji
+
+# === OS / editor junk ===
+.DS_Store
+Thumbs.db
+
 
