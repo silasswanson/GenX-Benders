@@ -21,14 +21,14 @@ include("src/GenX-Benders.jl")   # defines run_timedomainreduction!
 
 const CASE = joinpath(@__DIR__, "GenX-Brazil")
 
-# Representative periods per year to test (order you requested)
-rep_periods = [20, 15, 10, 5, 1]
+# Representative periods per year to test 
+rep_periods = [52,50,40,30,20,15,10,5,1]
 
 # Path to TDR settings file
 const TDR_SETTINGS_PATH = joinpath(CASE, "Settings", "time_domain_reduction_settings.yml")
 
-# Root folder for sweep results
-const SWEEP_OUTDIR = joinpath(CASE, "TDR_sweep_results")
+# Root folder for sweep results #### change this based on what you are running####
+const SWEEP_OUTDIR = joinpath(CASE, "TDR_sweep_results_global")
 isdir(SWEEP_OUTDIR) || mkpath(SWEEP_OUTDIR)
 
 println("Case directory:        $CASE")
