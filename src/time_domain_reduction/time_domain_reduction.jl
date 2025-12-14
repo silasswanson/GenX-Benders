@@ -538,6 +538,36 @@ function cluster_inputs(inpath, settings_path, mysetup, stage_id=-99, v=false)
     LoadWeight = myTDRsetup["LoadWeight"]
     WeightTotal = myTDRsetup["WeightTotal"]
     ClusterFuelPrices = myTDRsetup["ClusterFuelPrices"]
+
+    # NEW: scenario TDR mode (1 = per-scenario, 2 = global across scenarios)
+    ScenarioTDRMode = get(myTDRsetup, "ScenarioTDRMode", 1)
+    NumScenarios    = haskey(mysetup, "NumScenarios") ? mysetup["NumScenarios"] : 1
+
+    # Option B: if global TDR across scenarios, scale per-scenario parameters
+    # Only do this for non-multistage calls to cluster_inputs (stage_id == -99)
+    if ScenarioTDRMode == 2 &&
+       haskey(mysetup, "MultiStage") &&
+       mysetup["MultiStage"] == 0 &&
+       NumScenarios > 1 &&
+       stage_id == -99
+
+        if v
+            println("Global scenario TDR mode: scaling MinPeriods, MaxPeriods, and WeightTotal",
+                    " by NumScenarios = ", NumScenarios)
+        end
+
+        MinPeriods  *= NumScenarios
+        MaxPeriods  *= NumScenarios
+        WeightTotal *= NumScenarios
+
+        # Keep the in-memory settings dict consistent with the effective values used
+        myTDRsetup["MinPeriods"]  = MinPeriods
+        myTDRsetup["MaxPeriods"]  = MaxPeriods
+        myTDRsetup["WeightTotal"] = WeightTotal
+    end
+
+
+
     TimeDomainReductionFolder = mysetup["TimeDomainReductionFolder"]
 
     MultiStage = mysetup["MultiStage"]
@@ -638,6 +668,7 @@ function cluster_inputs(inpath, settings_path, mysetup, stage_id=-99, v=false)
     NewColNames = [Symbol.(OldColNames); :GrpWeight]
     Nhours = nrow(InputData) # Timesteps
     Ncols = length(NewColNames) - 1
+
 
 
     ##### Step 1: Normalize or standardize all load, renewables, and fuel data / optionally scale with LoadWeight
@@ -935,6 +966,32 @@ function cluster_inputs(inpath, settings_path, mysetup, stage_id=-99, v=false)
     ClusterDataTest = vcat([rpDFs[a] for a in A]...) # To compare fairly, load is not scaled here
     RMSE = Dict( c => rmse_score(InputDataTest[:, c], ClusterDataTest[:, c])  for c in OldColNames)
 
+    # ----- write per-variable time-series RMSE to CSV for this TDR run -----
+
+    rmse_df = DataFrame(
+        Variable = String[],
+        RMSE     = Float64[],
+    )
+
+    for (col, val) in RMSE
+        push!(rmse_df, (string(col), float(val)))
+    end
+
+    # This function is called with different inpath values (case folder, scenario folder, etc.)
+    # The TDR_Results directory for this run is the same place as Load_data/Fuels_data/etc.
+    # Later in the function, you already compute `TimeDomainReductionFolder` and write outputs into:
+    #   joinpath(inpath, "TDR_Results")  OR
+    #   joinpath(inpath,"Inputs","Inputs_p$per", TimeDomainReductionFolder)  (for MultiStage)
+    #
+    # For (MultiStage == 0) case:
+    if MultiStage == 0
+        tdr_dir = joinpath(inpath, TimeDomainReductionFolder)
+        mkpath(tdr_dir)
+        CSV.write(joinpath(tdr_dir, "RMSE_timeseries.csv"), rmse_df)
+    end
+
+
+
     ##### Step 6: Print to File
 
     if MultiStage == 1
@@ -1140,4 +1197,106 @@ function cluster_inputs(inpath, settings_path, mysetup, stage_id=-99, v=false)
                 "Weights" => W,
                 "Centers" => M,
                 "RMSE" => RMSE)
+end
+
+
+
+"""
+    distribute_global_to_scenarios(case::AbstractString;
+                                   num_scenarios::Int,
+                                   periods_per_scenario::Int,
+                                   timesteps_per_rep_period::Int = 168)
+
+Given the global TDR results in `case/TDR_Results`, compute how much each
+global representative period contributes to each scenario.
+
+Writes `Global_TDR_Scenario_Weights.csv` into the same TDR_Results folder
+with columns:
+
+- Rep_Period_Index
+- Global_Sub_Weights      (hours across all scenarios)
+- Sub_Weights_S1, Sub_Weights_S2, ...
+
+it does not modify the original TDR files. This is a decomposition of each RP into each of the years it is used in. 
+"""
+function distribute_global_to_scenarios(case::AbstractString;
+                                        num_scenarios::Int,
+                                        periods_per_scenario::Int,
+                                        timesteps_per_rep_period::Int = 168)
+
+    
+
+    tdr_dir = joinpath(case, "TDR_Results")
+    period_map_path = joinpath(tdr_dir, "Period_map.csv")
+
+    @assert isfile(period_map_path) "Period_map.csv not found at $period_map_path"
+
+    df_pm = CSV.read(period_map_path, DataFrame)
+
+    @assert :Period_Index in names(df_pm) "Period_map.csv must contain Period_Index"
+    @assert :Rep_Period_Index in names(df_pm) "Period_map.csv must contain Rep_Period_Index"
+
+    # Infer total periods and sanity-check scenario blocking
+    n_periods = maximum(df_pm.Period_Index)
+    @assert n_periods == num_scenarios * periods_per_scenario "n_periods=$n_periods not equal to num_scenarios*periods_per_scenario = $(num_scenarios*periods_per_scenario)"
+
+    # Add Scenario index: 1..num_scenarios
+    df_pm[!, :Scenario] = ceil.(Int, df_pm.Period_Index ./ periods_per_scenario)
+
+
+    # List of global RPs
+    rp_indices = sort(unique(df_pm.Rep_Period_Index))
+
+    # Prepare output DataFrame
+    out = DataFrame(Rep_Period_Index = rp_indices)
+
+    # Global weights (across all scenarios)
+    global_counts = combine(groupby(df_pm, :Rep_Period_Index)) do sub
+        (; Global_Sub_Weights = nrow(sub) * timesteps_per_rep_period)
+    end
+    out = leftjoin(out, global_counts, on = :Rep_Period_Index)
+
+    # Scenario-specific weights
+    for s in 1:num_scenarios
+        df_s = df_pm[df_pm.Scenario .== s, :]
+        counts_s = combine(groupby(df_s, :Rep_Period_Index)) do sub
+            (; Sub_Weights = nrow(sub) * timesteps_per_rep_period)
+        end
+        rename!(counts_s, :Sub_Weights => Symbol("Sub_Weights_S$s"))
+
+        out = leftjoin(out, counts_s, on = :Rep_Period_Index)
+    end
+
+    # Replace missing weights with 0 (RPs unused by a scenario)
+    for s in 1:num_scenarios
+        col = Symbol("Sub_Weights_S$s")
+        if col ∉ names(out)
+            out[!, col] = zeros(Int, nrow(out))
+        else
+            replace!(out[!, col], missing => 0)
+        end
+    end
+
+    # Optional sanity checks (can comment out if annoying)
+    # 1) Per-scenario hours sum to a year
+    for s in 1:num_scenarios
+        col = Symbol("Sub_Weights_S$s")
+        total_hours_s = sum(out[!, col])
+        @info "Scenario $s total hours from TDR distribution" total_hours_s=total_hours_s
+    end
+
+    # 2) For each RP, sum over scenarios equals global weight
+    for row in eachrow(out)
+        global_w = row.Global_Sub_Weights
+        scen_sum = sum(row[Symbol("Sub_Weights_S$s")] for s in 1:num_scenarios)
+        if scen_sum != global_w
+            @warn "Weight mismatch for RP $(row.Rep_Period_Index): global=$global_w, sum_scenario=$scen_sum"
+        end
+    end
+
+    out_path = joinpath(tdr_dir, "Global_TDR_Scenario_Weights.csv")
+    CSV.write(out_path, out)
+    @info "Wrote scenario-distributed weights to $out_path"
+
+    return out
 end

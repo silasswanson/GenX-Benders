@@ -157,17 +157,50 @@ function run_timedomainreduction_scenarios(case::AbstractString,settings_path::A
     return
 end
 
+# NEW: global TDR across all scenarios
+function run_timedomainreduction_scenarios_global(case::AbstractString,
+                                                  settings_path::AbstractString,
+                                                  setup::Dict)
+
+    # Make sure scenario folders with raw 1-year inputs exist
+    unpack_scenarios(case, setup)
+
+    # Run a single global TDR on the full multi-year series in `case`
+    # In ScenarioTDRMode = 2, MinPeriods/MaxPeriods/WeightTotal are scaled
+    cluster_inputs(case, settings_path, setup)
+
+    # (Optional later: distribute_global_tdr_to_scenarios(case, settings_path, setup))
+    return
+end
+
+
 function run_timedomainreduction!(case::AbstractString)
-    settings_path = get_settings_path(case) #Settings YAML file path
-    genx_settings = get_settings_path(case, "genx_settings.yml") #Settings YAML file path
-    mysetup = configure_settings(genx_settings) # mysetup dictionary stores settings and GenX-specific parameters
+    settings_path = get_settings_path(case)                  # Settings YAML path
+    genx_settings = get_settings_path(case, "genx_settings.yml")
+    mysetup = configure_settings(genx_settings)
 
     if mysetup["MultiStage"] == 0
-        if mysetup["NumScenarios"]<=1
+        # NEW: read scenario TDR mode from time_domain_reduction_settings.yml
+        tdr_settings = get_settings_path(case, "time_domain_reduction_settings.yml")
+        TDRSettingsDict = YAML.load(open(tdr_settings))
+        ScenarioTDRMode = get(TDRSettingsDict, "ScenarioTDRMode", 1)
+
+        if mysetup["NumScenarios"] <= 1
+            # Single-scenario case: always just cluster once
             cluster_inputs(case, settings_path, mysetup)
         else
-            run_timedomainreduction_scenarios(case,settings_path,mysetup)
+            # Multi-scenario cases: choose per-scenario vs global behavior
+            if ScenarioTDRMode == 1
+                # Legacy behavior: 1-year TDR per scenario + pack
+                run_timedomainreduction_scenarios(case, settings_path, mysetup)
+            elseif ScenarioTDRMode == 2
+                # New behavior: one global TDR across all scenarios
+                run_timedomainreduction_scenarios_global(case, settings_path, mysetup)
+            else
+                error("Unexpected value for 'ScenarioTDRMode' in time_domain_reduction_settings.yml. Expected 1 or 2.")
+            end
         end
+
     elseif mysetup["MultiStage"] >= 1
         run_timedomainreduction_multistage!(case)
     else
@@ -176,6 +209,7 @@ function run_timedomainreduction!(case::AbstractString)
 
     return
 end
+
 
 function run_timedomainreduction_multistage!(case::AbstractString)
     # special multistage version
